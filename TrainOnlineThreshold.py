@@ -4,18 +4,21 @@ from data.OnlineData import OnlineExample
 import random
 import torch
 import math
+import numpy as np
 from Utils.ExportData import ExportOnlineTraining
 import TrainBranchyModelExpCertWeights
+from tqdm import tqdm
 
 #global process evaluating parameters
+onlieExmaples = 50000
+numClasses = 10
 trainLastExamplesToCheck = 200
-convergenceThreshold = 0.1
-onlineTrainingSummary = ExportOnlineTraining
-shuffleLevel = 1
+convergenceThreshold = 0.005
+onlineTrainingSummary = ExportOnlineTraining(printToLog=True)
 certaintyLevels =  [0,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75, 0.8,0.85,0.9,0.95,0.99,0.999]
-shuffleLevels = [1,5,10,50,500,750,1000,3000,5000,10000,50000]
+shuffleLevels = [50000,10000,5000,3000,1000,750,500,50,10,5,1]
 
-def prepareData():
+def prepareData(shuffleLevel = 50000):
     CIFAR10 = CIFAR10data()
 
     # if download:
@@ -53,8 +56,11 @@ def lossFunction(branchyNetwork,branchyNetworkOutput,target):
     return loss, lossByPath[3], correctByPath[3], certScorePyPath[3]
 
 
-def trainOnline(branchyNetwork,optimizer,onlineData):
+def trainOnline(branchyNetwork,optimizer,onlineData,shuffleLevel = 50000):
 
+    print('Starting new training: Shuffle level {}'.format(shuffleLevel))
+
+    exploreClassesPerBatch = np.zeros((math.ceil(onlieExmaples/trainLastExamplesToCheck),numClasses))
     scorePerBatch = []
     idx = 0
     batchidx = 0
@@ -74,15 +80,22 @@ def trainOnline(branchyNetwork,optimizer,onlineData):
     converge = False
     inferencePhase = False
 
-    for example in onlineData:
-        idx += 1
-        batchidx = math.ceil(idx/trainLastExamplesToCheck)
-        optimizer.zero_grad()
-        output = branchyNetwork(example.dataTensor)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
+    for example in tqdm(onlineData):
+
+        batchidx = math.floor(idx/trainLastExamplesToCheck)
+        optimizer.zero_grad()
+
+        data= example.dataTensor.to(device)
+
+        output = branchyNetwork(data)
+
+        outputClass = output[3].networkOutput.data.max(1, keepdim=True)[1]
+        exploreClassesPerBatch[batchidx,outputClass] += 1
 
         target = output['main'].networkOutput.data.max(1, keepdim=True)[1]
-        target = torch.squeeze(target)
+        target = torch.squeeze(target).unsqueeze(dim=0)
         loss, lossByPath, correct, certScor = lossFunction(branchyNetwork,
                                                             output,
                                                             target)
@@ -95,7 +108,7 @@ def trainOnline(branchyNetwork,optimizer,onlineData):
 
         if inferencePhase:
             for cert in certaintyLevels:
-                if output.networkCertainty.item() >= cert:
+                if output[3].networkCertainty.item() >= cert:
                     inferenceAccuracyByCert[cert] += correct
                     casesToEvalByCert[cert] += 1
 
@@ -111,7 +124,7 @@ def trainOnline(branchyNetwork,optimizer,onlineData):
             batchAccuracy = 0
 
             if batchidx > 1:
-                accuracyDelta = batchScore[batchidx - 1] - batchScore[batchidx - 2]
+                accuracyDelta = scorePerBatch[batchidx - 1] - scorePerBatch[batchidx - 2]
 
             else:
                 accuracyDelta = 0
@@ -129,7 +142,7 @@ def trainOnline(branchyNetwork,optimizer,onlineData):
 
         loss.backward()
         optimizer.step()
-
+        idx += 1
 
     for cert in certaintyLevels:
         if cert not in inferenceAccuracyByCert:
@@ -142,18 +155,17 @@ def trainOnline(branchyNetwork,optimizer,onlineData):
                                                         expCount=casesToEvalByCert[cert],
                                                         accuracy=inferenceAccuracyByCert[cert])
 
-
+    onlineTrainingSummary.exportArray(exploreClassesPerBatch,"exploreClassesPerBatch")
 def trainOnlineMain():
 
 
-    for sl in shuffleLevels:
-        shuffleLevel = sl
-        onlineData = prepareData()
+    for shuffleLevel in shuffleLevels:
+        onlineData = prepareData(shuffleLevel)
         brancyNet, optimizer = prepareNetwork()
-        trainOnline(brancyNet,optimizer,onlineData)
+        trainOnline(brancyNet,optimizer,onlineData,shuffleLevel)
+        onlineTrainingSummary.saveDataToCSV()
+    
 
-    #TBD
-    onlineTrainingSummary.saveDataToCSV()
 if __name__ == '__main__':
     trainOnlineMain()
 
