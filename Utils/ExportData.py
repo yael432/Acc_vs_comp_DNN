@@ -1,5 +1,6 @@
 import pandas as pd
 import time
+import numpy as np
 import csv
 
 class ExportRunningData():
@@ -114,7 +115,7 @@ class ExportClassificationModelResult():
 
 
 class ExportOnlineTraining():
-    def __init__(self):
+    def __init__(self,printToLog = False):
         self.trainAccuracyDF = pd.DataFrame(columns=['Shuffle',
                                                     'Batch',
                                                     'Accuracy'])
@@ -125,21 +126,33 @@ class ExportOnlineTraining():
                                                     'Certainty'
                                                     'Output in branch'
                                                     'Accuracy'])
+
+
         self.runSummaryDF = pd.DataFrame(columns=['Shuffle',
                                                  'Overall accuracy'
                                                  'inference time'])
 
+        self.printToLog = printToLog
+        if printToLog:
+            fileDir = 'Results/online lr/converge/Online result log_' + time.strftime("%Y%m%d-%H%M%S");
+            self.logFile =  fileDir#csv.writer(open(fileDir,"a"))
+
 
     def saveBatchAcc(self,shuffle,batch,accuracy):
-        if shuffle in self.trainAccuracy :
-            self.trainAccuracyDF = self.trainAccuracyDF.append({'Shuffle': shuffle,
-                                                                'Batch': batch,
-                                                                'Accuracy': accuracy}, ignore_index=True)
+
+        self.trainAccuracyDF = self.trainAccuracyDF.append({'Shuffle': shuffle,
+                                                            'Batch': batch,
+                                                            'Accuracy': accuracy}, ignore_index=True)
+        if self.printToLog:
+            printToLogFile(self.logFile,['saveBatchAcc',shuffle,batch,accuracy])
 
     def saveBatchScoreChg(self,shuffle,batch,scoreChg):
         self.scoreChgDF = self.scoreChgDF.append({'Shuffle': shuffle,
                                                     'Batch': batch,
                                                     'Score change': scoreChg}, ignore_index=True)
+
+        if self.printToLog:
+            printToLogFile(self.logFile, ['saveBatchScoreChg',shuffle,batch,scoreChg])
 
     def saveInferenceAccuracy(self,shuffle,certainty,expCount,accuracy):
         self.inferenceAccuracyDF = self.inferenceAccuracyDF.append({'Shuffle': shuffle,
@@ -147,10 +160,15 @@ class ExportOnlineTraining():
                                                                     'Output in branch': expCount,
                                                                     'Accuracy': accuracy}, ignore_index=True)
 
+        if self.printToLog:
+            printToLogFile(self.logFile, ['saveInferenceAccuracy' ,shuffle,certainty,expCount,accuracy])
+
     def saveInferenceTime(self,shuffle,inferenceTime):
         self.inferenceTimeDF =self.runSummaryDF.append({'Shuffle': shuffle,
                                                     'inference time': inferenceTime}, ignore_index=True)
 
+        if self.printToLog:
+            printToLogFile(self.logFile, ['saveInferenceTime' ,shuffle,inferenceTime])
 
     def saveDataToCSV(self):
 
@@ -167,3 +185,14 @@ class ExportOnlineTraining():
 
         filePath = fileDir + '_ inference time'
         self.inferenceTimeDF.to_csv(filePath, sep='\t')
+
+    def exportArray(self,dataArr,dataDesc):
+
+        fileDir = 'Results/online lr/converge/Online result_' + time.strftime("%Y%m%d-%H%M%S") + dataDesc
+        np.savetxt(fileDir, dataArr, delimiter=",")
+
+def printToLogFile(fileName,fields):
+
+    with open(fileName, 'a') as myfile:
+        wr = csv.writer(myfile, quoting=csv.QUOTE_ALL)
+        wr.writerow(fields)
