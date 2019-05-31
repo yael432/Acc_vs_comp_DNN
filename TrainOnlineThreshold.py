@@ -46,7 +46,7 @@ def prepareData(shuffleLevel = 50000):
 
 def prepareNetwork():
     #load alex branchy net
-    brancyNet,optimizer,scheduler,CIFAR10 = TrainBranchyModelExpCertWeights.defineNetwork(True,weight_decay=1)
+    brancyNet,optimizer,scheduler,CIFAR10 = TrainBranchyModelExpCertWeights.defineNetwork(True,lr=0.001,weight_decay=0.3)
     return brancyNet,optimizer
 
 def lossFunction(branchyNetwork,branchyNetworkOutput,target):
@@ -73,9 +73,8 @@ def trainOnline(branchyNetwork,optimizer,onlineData,shuffleLevel = 50000):
     casesToEvalByCert = {}
 
     for cert in certaintyLevels:
-        if cert not in inferenceAccuracyByCert:
-            inferenceAccuracyByCert[cert] = 0
-            casesToEvalByCert[cert] = 0
+        inferenceAccuracyByCert[cert] = 0
+        casesToEvalByCert[cert] = 0
 
     converge = False
     inferencePhase = False
@@ -105,8 +104,9 @@ def trainOnline(branchyNetwork,optimizer,onlineData,shuffleLevel = 50000):
         trueClass = target.item()
         exploreClassesPerBatch[0, trueClass] += 1
 
-        lossCoefficient = np.sum(exploreClassesPerBatch) / exploreClassesPerBatch[0, trueClass]
-        loss = loss * lossCoefficient
+        if inferencePhase:
+            lossCoefficient = 1- exploreClassesPerBatch[0, trueClass]/np.sum(exploreClassesPerBatch)
+            loss = loss * lossCoefficient
 
         exampleScore = (correct + certScor)/2
         batchScore += exampleScore
@@ -141,7 +141,7 @@ def trainOnline(branchyNetwork,optimizer,onlineData,shuffleLevel = 50000):
             onlineTrainingSummary.saveBatchScoreChg(shuffle=shuffleLevel, batch=batchidx, scoreChg=accuracyDelta)
             onlineTrainingSummary.exportArray(exploreClassesPerBatch, "exploreClassesPerBatch")
 
-            if ~inferencePhase & batchidx > 1:
+            if ~inferencePhase and batchidx > 1:
 
                 converge = abs(accuracyDelta) < convergenceThreshold
 
@@ -155,15 +155,14 @@ def trainOnline(branchyNetwork,optimizer,onlineData,shuffleLevel = 50000):
 
 
     for cert in certaintyLevels:
-        if cert not in inferenceAccuracyByCert:
 
-            if casesToEvalByCert[cert] > 0:
-                inferenceAccuracyByCert[cert] = inferenceAccuracyByCert[cert]/casesToEvalByCert[cert]
+        if casesToEvalByCert[cert] > 0:
+            inferenceAccuracyByCert[cert] = inferenceAccuracyByCert[cert]/casesToEvalByCert[cert]
 
-            onlineTrainingSummary.saveInferenceAccuracy(shuffle=shuffleLevel,
-                                                        certainty=cert,
-                                                        expCount=casesToEvalByCert[cert],
-                                                        accuracy=inferenceAccuracyByCert[cert])
+        onlineTrainingSummary.saveInferenceAccuracy(shuffle=shuffleLevel,
+                                                    certainty=cert,
+                                                    expCount=casesToEvalByCert[cert],
+                                                    accuracy=inferenceAccuracyByCert[cert])
 
 
 def trainOnlineMain():
