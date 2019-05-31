@@ -26,7 +26,14 @@ class ExportRunningData():
 
 class ExportBranchyNetEval():
     def __init__(self):
-        self.exportData = pd.DataFrame(columns=['threshold','path','pathComputationCost','accuracy','casesToEval','accuracyToEval','casesNotToEval','accuracyNotToEval'])
+        self.exportData = pd.DataFrame(columns=['threshold',
+                                                'path',
+                                                'pathComputationCost',
+                                                'accuracy',
+                                                'casesToEval',
+                                                'accuracyToEval',
+                                                'casesNotToEval',
+                                                'accuracyNotToEval'])
 
     def addNewData(self,threshold=None,path=None,pathComputationCost=None,
                    accuracy=None,casesToEval=None,
@@ -123,19 +130,18 @@ class ExportOnlineTraining():
                                                'Batch',
                                                 'Score change'])
         self.inferenceAccuracyDF = pd.DataFrame(columns=['Shuffle',
-                                                    'Certainty'
-                                                    'Output in branch'
+                                                    'Certainty',
+                                                    'Output in branch',
                                                     'Accuracy'])
 
 
-        self.runSummaryDF = pd.DataFrame(columns=['Shuffle',
-                                                 'Overall accuracy'
+        self.inferenceTimeDF = pd.DataFrame(columns=['Shuffle',
                                                  'inference time'])
 
         self.printToLog = printToLog
-        if printToLog:
-            fileDir = 'Results/online lr/converge/Online result log_' + time.strftime("%Y%m%d-%H%M%S");
-            self.logFile =  fileDir#csv.writer(open(fileDir,"a"))
+        fileDir = 'Results/online lr/converge/Online result log_' + time.strftime("%Y%m%d-%H%M%S");
+        self.logFile = fileDir  # csv.writer(open(fileDir,"a"))
+
 
 
     def saveBatchAcc(self,shuffle,batch,accuracy):
@@ -164,7 +170,7 @@ class ExportOnlineTraining():
             printToLogFile(self.logFile, ['saveInferenceAccuracy' ,shuffle,certainty,expCount,accuracy])
 
     def saveInferenceTime(self,shuffle,inferenceTime):
-        self.inferenceTimeDF =self.runSummaryDF.append({'Shuffle': shuffle,
+        self.inferenceTimeDF =self.inferenceTimeDF.append({'Shuffle': shuffle,
                                                     'inference time': inferenceTime}, ignore_index=True)
 
         if self.printToLog:
@@ -187,9 +193,10 @@ class ExportOnlineTraining():
         self.inferenceTimeDF.to_csv(filePath, sep='\t')
 
     def exportArray(self,dataArr,dataDesc):
-
-        fileDir = 'Results/online lr/converge/Online result_' + time.strftime("%Y%m%d-%H%M%S") + dataDesc
-        np.savetxt(fileDir, dataArr, delimiter=",")
+        filePath = self.logFile + '_' + dataDesc
+        f = open(filePath, 'ab')
+        np.savetxt(f, dataArr, delimiter=",",fmt='%d')
+        f.close()
 
 def printToLogFile(fileName,fields):
 
