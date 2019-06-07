@@ -13,11 +13,13 @@ import matplotlib.pyplot as plt
 #global process evaluating parameters
 onlieExmaples = 50000
 numClasses = 10
-trainLastExamplesToCheck = 200
+trainBatchSize = 200
 convergenceThreshold = 0.005
 onlineTrainingSummary = ExportOnlineTraining(printToLog=False)
 certaintyLevels =  [0,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75, 0.8,0.85,0.9,0.95,0.99,0.999]
-shuffleLevels = [1,50000] #[50000,10000,5000,3000,1000,750,500,50,10,5,1]
+shuffleLevels = [50000,10000,5000,3000,1000,750,500,50,10,5,1]
+lossReduction = 1/10000
+epochs = 5
 
 def prepareData(shuffleLevel = 50000):
     CIFAR10 = CIFAR10data()
@@ -25,12 +27,13 @@ def prepareData(shuffleLevel = 50000):
     # if download:
     #     CIFAR10.downloadCIFAR10data()
 
-    CIFAR10.prepareCIFAR10TrainDataset(1)
-    CIFAR10.prepareCIFAR10TestDataset(1)
+    CIFAR10.prepareCIFAR10TrainDataset(batch_size_train=1)
+    CIFAR10.prepareCIFAR10TestDataset(batch_size_test=1)
 
     onlineData = []
+
     for batch_idx, (data, target) in enumerate(CIFAR10.train_loader):
-        newExample = OnlineExample(data,target)
+        newExample = OnlineExample(data,target,batch_idx)
         onlineData.append(newExample)
 
     if shuffleLevel > 1:
@@ -44,23 +47,30 @@ def prepareData(shuffleLevel = 50000):
     else:
         onlineDataSorted = onlineData[:]
 
+    onlinedataByKey = {}
+    keysSorted = []
+    keysRandom = []
+    for e in range(len(onlineData)):
+        keysSorted.append(onlineDataSorted[e].exampleKey)
+        keysRandom.append(onlineData[e].exampleKey)
+        onlinedataByKey[onlineData[e].exampleKey] = onlineData[e]
 
-    return onlineDataSorted
+    return onlinedataByKey,keysSorted,keysRandom
 
 def prepareNetwork():
     #load alex branchy net
     brancyNet,optimizer,scheduler,CIFAR10 = TrainBranchyModelExpCertWeights.defineNetwork(True,lr=0.01)
     return brancyNet,optimizer
 
-def lossFunction(branchyNetwork,branchyNetworkOutput,target):
+def lossFunction(branchyNetwork,branchyNetworkOutput,target,batchTrainingSize=1000):
     loss, lossByPath, correctByPath, certScorePyPath = \
         TrainBranchyModelExpCertWeights.LossFunctionCrossEntropyAndBCE(branchyNetwork,branchyNetworkOutput,target)
     #3 - path index in current branch cofiguration
     #5 - 1 original example + 4 synthetic data
-    return loss, lossByPath[3], correctByPath[3]/5, certScorePyPath[3]/5
+    return loss, lossByPath[3], correctByPath[3]/batchTrainingSize, certScorePyPath[3]/batchTrainingSize
 
 
-def trainOnline(branchyNetwork,optimizer,onlineData,shuffleLevel = 50000):
+def trainOnline(branchyNetwork,optimizer,onlineData,keysSorted,keysRandom,shuffleLevel = 50000):
 
     print('Starting new training: Shuffle level {}'.format(shuffleLevel))
 
@@ -68,6 +78,7 @@ def trainOnline(branchyNetwork,optimizer,onlineData,shuffleLevel = 50000):
     scorePerBatch = []
     idx = 0
     batchidx = 0
+    idInBatch = 0
     inferenceTime = 0  # last input index before inference stage
     batchScore = 0
     batchAccuracy = 0
@@ -85,73 +96,91 @@ def trainOnline(branchyNetwork,optimizer,onlineData,shuffleLevel = 50000):
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    for example in tqdm(onlineData):
+    #training phase
+    batchData = torch.zeros([trainBatchSize*5,3,32,32], dtype=torch.float)
+    batchtarget = torch.empty(trainBatchSize*5, 1, dtype=torch.long)
+    batchDataIdx = np.arange(trainBatchSize*5)
+    np.random.shuffle(batchDataIdx)
+
+    for e in tqdm(range(onlieExmaples)):
+
+        if inferencePhase:
+            exampleKey = keysRandom[0]
+        else:
+            exampleKey = keysSorted[0]
+
+        example = onlineData[exampleKey]
+
+        keysRandom.remove(exampleKey)
+        keysSorted.remove(exampleKey)
 
         idx += 1
-        batchidx = math.floor(idx/trainLastExamplesToCheck)
 
-        #optimizer.zero_grad()
-
-        dataAug = torch.zeros([5, example.dataTensor.size()[1], example.dataTensor.size()[2],example.dataTensor.size()[3]], dtype=torch.float)
-
-        dataAug[0,:,:,:] = example.dataTensor
-        dataAug[1, :, :, :] = torch.rot90(example.dataTensor, 1, [2, 3])
-        dataAug[2, :, :, :] = torch.rot90(example.dataTensor, 2, [2, 3])
-        dataAug[3, :, :, :] = torch.rot90(example.dataTensor, 3, [2, 3])
-        dataAug[4, :, :, :] = torch.flip(example.dataTensor, [2, 3])
-        # plt.imshow(dataAug[4, :, :, :].permute(1, 2, 0))
-        # plt.show()
-
-        data= dataAug.to(device)
+        data = example.dataTensor.to(device)
 
         output = branchyNetwork(data)
 
-
-
         targetClass = output['main'].networkOutput.data.max(1, keepdim=True)[1]
-        targetClass = torch.squeeze(targetClass).unsqueeze(dim=0)
-
-        trueClass = targetClass.data[0,0].item()
-
-        target = torch.empty(5, 1, dtype=torch.long)
-        target = target.fill_(trueClass)
-        target = torch.squeeze(target)
-        target = target.to(device)
-
-        loss, lossByPath, correct, certScor = lossFunction(branchyNetwork,
-                                                            output,
-                                                            target)
-
-        loss = loss*(1/50000)
-        exploreClassesPerBatch[0, trueClass] += 1
-
-        # if inferencePhase:
-        #     lossCoefficient = 1- exploreClassesPerBatch[0, trueClass]/np.sum(exploreClassesPerBatch)
-        #     loss = loss * lossCoefficient
-
-        exampleScore = (correct + certScor)/2
-        batchScore += exampleScore
-        batchAccuracy += correct
-        overallAccuracy += correct
+        trueClass = targetClass.data[0, 0].item()
 
         if inferencePhase:
+            pred = output[3].networkOutput.data.max(1, keepdim=True)[1]
+            pred = pred.item()
+
+            inferenceCheck = pred == trueClass
+
             for cert in certaintyLevels:
                 if output[3].networkCertainty.data[0,0].item() >= cert:
-                    inferenceAccuracyByCert[cert] += correct
+                    inferenceAccuracyByCert[cert] += inferenceCheck
                     casesToEvalByCert[cert] += 1
 
+        #fill batch data
+        currentIdx = batchDataIdx[idInBatch]
+        batchData[currentIdx, :, :, :] = example.dataTensor
+        batchtarget[currentIdx,0] = trueClass
+        idInBatch += 1
+
+        currentIdx = batchDataIdx[idInBatch]
+        batchData[currentIdx, :, :, :] = torch.rot90(example.dataTensor, 1, [2, 3])
+        batchtarget[currentIdx, 0] = trueClass
+        idInBatch += 1
+
+        currentIdx = batchDataIdx[idInBatch]
+        batchData[currentIdx, :, :, :] = torch.rot90(example.dataTensor, 2, [2, 3])
+        batchtarget[currentIdx, 0] = trueClass
+        idInBatch += 1
+
+        currentIdx = batchDataIdx[idInBatch]
+        batchData[currentIdx, :, :, :] = torch.rot90(example.dataTensor, 3, [2, 3])
+        batchtarget[currentIdx, 0] = trueClass
+        idInBatch += 1
+
+        currentIdx = batchDataIdx[idInBatch]
+        batchData[currentIdx, :, :, :] = torch.flip(example.dataTensor, [2, 3])
+        batchtarget[currentIdx, 0] = trueClass
+        idInBatch += 1
+
+        if idx % trainBatchSize == 0:
+            #print('Starting training for batch number {}'.format(batchidx))
+
+            batchtarget = torch.squeeze(batchtarget)
+            data, target = batchData.to(device), batchtarget.to(device)
 
 
-        if idx%trainLastExamplesToCheck == 0:
 
-            batchScore = batchScore/trainLastExamplesToCheck
+            for epoch in range(epochs):
+                optimizer.zero_grad()
+                output = branchyNetwork(data)
+                loss, lossByPath, correct, certScor = lossFunction(branchyNetwork,
+                                                                   output,
+                                                                   target,
+                                                                   batchTrainingSize=trainBatchSize*5)
+
+                loss.backward()
+                optimizer.step()
+
+            batchScore = (correct + certScor) / 2
             scorePerBatch.append(batchScore)
-
-            batchAccuracy = batchAccuracy/trainLastExamplesToCheck
-            onlineTrainingSummary.saveBatchAcc(shuffle=shuffleLevel,accuracy=batchAccuracy,batch=batchidx)
-
-            batchScore = 0
-            batchAccuracy = 0
 
             if batchidx > 1:
                 accuracyDelta = scorePerBatch[batchidx - 1] - scorePerBatch[batchidx - 2]
@@ -160,10 +189,9 @@ def trainOnline(branchyNetwork,optimizer,onlineData,shuffleLevel = 50000):
                 accuracyDelta = 0
 
             onlineTrainingSummary.saveBatchScoreChg(shuffle=shuffleLevel, batch=batchidx, scoreChg=accuracyDelta)
-            onlineTrainingSummary.exportArray(exploreClassesPerBatch, "exploreClassesPerBatch")
+            onlineTrainingSummary.saveBatchAcc(shuffle=shuffleLevel, accuracy=correct, batch=batchidx)
 
-            if ~inferencePhase and batchidx > 1:
-
+            if batchidx > 1:
                 converge = abs(accuracyDelta) < convergenceThreshold
 
                 if converge:
@@ -171,10 +199,12 @@ def trainOnline(branchyNetwork,optimizer,onlineData,shuffleLevel = 50000):
                     inferenceTime = idx
                     onlineTrainingSummary.saveInferenceTime(shuffle=shuffleLevel,inferenceTime=inferenceTime)
 
-            optimizer.zero_grad()
-
-        loss.backward()
-        optimizer.step()
+            idInBatch =0
+            batchidx += 1
+            batchData = torch.zeros([trainBatchSize * 5, 3, 32, 32], dtype=torch.float)
+            batchtarget = torch.empty(trainBatchSize * 5, 1, dtype=torch.long)
+            batchDataIdx = np.arange(trainBatchSize * 5)
+            np.random.shuffle(batchDataIdx)
 
 
     for cert in certaintyLevels:
@@ -192,9 +222,9 @@ def trainOnlineMain():
 
 
     for shuffleLevel in shuffleLevels:
-        onlineData = prepareData(shuffleLevel)
+        onlineData,keysSorted,keysRandom = prepareData(shuffleLevel)
         brancyNet, optimizer = prepareNetwork()
-        trainOnline(brancyNet,optimizer,onlineData,shuffleLevel)
+        trainOnline(brancyNet,optimizer,onlineData,keysSorted,keysRandom,shuffleLevel)
         onlineTrainingSummary.saveDataToCSV()
 
 if __name__ == '__main__':
