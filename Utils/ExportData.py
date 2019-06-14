@@ -7,7 +7,9 @@ class ExportRunningData():
     def __init__(self):
         self.exportData = pd.DataFrame(columns=['epoch','batch','running_exanples','loss','accuracy','path','avgCertainty'])
 
-    def addNewData(self,lossHyP=None,certScore=None,epoch=None,batch=None,running_exanples=None,loss=None,accuracy=None,path='main',avgCertainty=None):
+    def addNewData(self,lossHyP=None,certScore=None,epoch=None,
+                   batch=None,running_exanples=None,loss=None,
+                   accuracy=None,path='main',avgCertainty=None,weight_decay = None):
         self.exportData = self.exportData.append({'lossHyP':lossHyP,
                                                     'certScore':certScore,
                                                     'epoch':epoch,
@@ -16,7 +18,8 @@ class ExportRunningData():
                                                   'loss':loss,
                                                   'accuracy':accuracy,
                                                   'path':path,
-                                                  'avgCertainty':avgCertainty}, ignore_index=True)
+                                                  'avgCertainty':avgCertainty,
+                                                  'weight_decay':weight_decay}, ignore_index=True)
 
     def saveData(self,filePath):
 
@@ -53,27 +56,27 @@ class ExportBranchyNetEval():
 
         self.exportData.to_csv(filePath, sep='\t')
 
-class ExportRunningData():
-    def __init__(self):
-                self.exportData = pd.DataFrame(
-                    columns=['epoch', 'batch', 'running_exanples', 'loss', 'accuracy', 'path', 'avgCertainty'])
-
-    def addNewData(self, lossHyP=None, certScore=None, epoch=None, batch=None, running_exanples=None, loss=None,
-                  accuracy=None, path='main', avgCertainty=None):
-                    self.exportData = self.exportData.append({'lossHyP': lossHyP,
-                                                          'certScore': certScore,
-                                                          'epoch': epoch,
-                                                          'batch': batch,
-                                                          'running_exanples': running_exanples,
-                                                          'loss': loss,
-                                                          'accuracy': accuracy,
-                                                          'path': path,
-                                                          'avgCertainty': avgCertainty}, ignore_index=True)
-
-    def saveData(self, filePath):
-                filePath = filePath + '/ExportRunningData ' + time.strftime("%Y%m%d-%H%M%S")
-
-                self.exportData.to_csv(filePath, sep='\t')
+# class ExportRunningData():
+#     def __init__(self):
+#                 self.exportData = pd.DataFrame(
+#                     columns=['epoch', 'batch', 'running_exanples', 'loss', 'accuracy', 'path', 'avgCertainty'])
+#
+#     def addNewData(self, lossHyP=None, certScore=None, epoch=None, batch=None, running_exanples=None, loss=None,
+#                   accuracy=None, path='main', avgCertainty=None):
+#                     self.exportData = self.exportData.append({'lossHyP': lossHyP,
+#                                                           'certScore': certScore,
+#                                                           'epoch': epoch,
+#                                                           'batch': batch,
+#                                                           'running_exanples': running_exanples,
+#                                                           'loss': loss,
+#                                                           'accuracy': accuracy,
+#                                                           'path': path,
+#                                                           'avgCertainty': avgCertainty}, ignore_index=True)
+#
+#     def saveData(self, filePath):
+#                 filePath = filePath + '/ExportRunningData ' + time.strftime("%Y%m%d-%H%M%S")
+#
+#                 self.exportData.to_csv(filePath, sep='\t')
 
 class ExportClassificationModelResult():
     def __init__(self):
