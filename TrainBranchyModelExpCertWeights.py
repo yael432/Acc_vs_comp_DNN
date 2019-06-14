@@ -52,12 +52,12 @@ def DefineBranchyLeNet():
 
     return brancyNet, optimizer, scheduler, MNIST
 
-def defineNetwork(certaintyOnInput):
+def defineNetwork(certaintyOnInput,lr=0.01,weight_decay=0):
     # set basic hyperparameters
 
     batch_size_train = 100
     batch_size_test = 100
-    learning_rate = 0.01
+    learning_rate = lr
     momentum = 0.5
 
 
@@ -94,8 +94,10 @@ def defineNetwork(certaintyOnInput):
 
     brancyNet = BranchyNet(orginalNet, branchPoints, example_data)
     brancyNet.to(device)
-    optimizer = optim.SGD(brancyNet.parameters(), lr=learning_rate,
-                          momentum=momentum)
+    optimizer = optim.SGD(brancyNet.parameters(),
+                          lr=learning_rate,
+                          momentum=momentum,
+                          weight_decay=weight_decay)
 
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.75)
     return brancyNet,optimizer,scheduler,CIFAR10
@@ -386,6 +388,7 @@ def test(branchyNetwork,
          exportTestData,
          lossFunctionID,
         lossHyP = 0,
+         weight_decay = 0,
          GroundTruthAvailable = True):
 
     branchyNetwork.eval()
@@ -449,7 +452,9 @@ def test(branchyNetwork,
                                   loss=test_loss,
                                   accuracy=accuracy,
                                   path=path,
-                                  avgCertainty=certaintyByPath[path])
+                                  avgCertainty=certaintyByPath[path],
+                                   weight_decay=weight_decay,
+                                   lossHyP=lossHyP)
         correctAvg += accuracy
         certScoreAvg += certScore
         print("path {} average certainty is {}".format(path, certaintyByPath[path]))
@@ -471,6 +476,7 @@ def trainBranchyNet(brancyNet,
                         n_epochs = 200,
                         lossFunctionID = 1,
                         lossHyP = 0,
+                        weight_decay =0,
                         GroundTruthAvailable = True,
                         download=False):
 
@@ -485,7 +491,7 @@ def trainBranchyNet(brancyNet,
         brancyNet = train(brancyNet, optimizer, dataLoader.train_loader, log_interval, epoch, exportTrainData,
                           lossFunctionID, lossHyP,GroundTruthAvailable)
         correctAvg,certScoreAvg = test(brancyNet, dataLoader.test_loader, epoch, exportTestData,lossFunctionID,
-                                        lossHyP, GroundTruthAvailable)
+                                        lossHyP,weight_decay, GroundTruthAvailable)
 
         overallScore = (correctAvg+certScoreAvg)/2
         if maxCorrect < overallScore:
@@ -501,14 +507,14 @@ def trainBranchyNet(brancyNet,
 
     return maxCorrect;
 
-def BranchTrainingMain(certaintyOnInput, lossFunctionID,netArct = "AlexNet",lossHyP = 0):
+def BranchTrainingMain(certaintyOnInput, lossFunctionID,netArct = "AlexNet",lossHyP = 0,weight_decay=0):
 
 
     exportTestData = ExportRunningData()
     exportTrainData = ExportRunningData()
 
     if netArct=="AlexNet":
-        brancyNet, optimizer,scheduler, dataLoader = defineNetwork(certaintyOnInput)
+        brancyNet, optimizer,scheduler, dataLoader = defineNetwork(certaintyOnInput,weight_decay)
     else:
         brancyNet, optimizer, scheduler, dataLoader = DefineBranchyLeNet()
 
@@ -538,14 +544,19 @@ def BranchTrainingMain(certaintyOnInput, lossFunctionID,netArct = "AlexNet",loss
                         exportTrainData=exportTrainData,
                         exportTestData=exportTestData,
                         resultsPath=resultsPath,
-                        n_epochs=200,
+                        n_epochs=30,
                         lossFunctionID = lossFunctionID,
                         lossHyP = lossHyP,
+                        weight_decay=weight_decay,
                         GroundTruthAvailable=False)
 
 if __name__ == '__main__':
     #BranchTrainingMain(certaintyOnInput=False)
     #BranchTrainingMain(certaintyOnInput=True,lossFunctionID=1)
     #BranchTrainingMain(certaintyOnInput=True, lossFunctionID=2)
-    BranchTrainingMain(certaintyOnInput=True, lossFunctionID=1,netArct="LeNet")
-    BranchTrainingMain(certaintyOnInput=True, lossFunctionID=2,netArct="LeNet")
+    # BranchTrainingMain(certaintyOnInput=True, lossFunctionID=1,netArct="LeNet")
+    # BranchTrainingMain(certaintyOnInput=True, lossFunctionID=2,netArct="LeNet")
+
+    weight_decay_grid = [0.01,0.025,0.05,0.075,0.1,0.25,0.5,0.75,1]
+    for wd in weight_decay_grid:
+        BranchTrainingMain(certaintyOnInput=True, lossFunctionID=3, netArct="AlexNet",lossHyP = 33.82,weight_decay=wd)
