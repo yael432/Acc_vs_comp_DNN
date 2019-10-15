@@ -10,6 +10,7 @@ from Utils.ExportData import ExportRunningData
 from Models.LeNet.TrainMNIST import MNISTdata
 from Models.AlexNet.TrainAlexNet import CIFAR10data
 from Models.AlexNet.AlexNet import AlexNetMain
+import argparse
 
 def DefineBranchyLeNet():
     # prepare data
@@ -52,7 +53,7 @@ def DefineBranchyLeNet():
 
     return brancyNet, optimizer, scheduler, MNIST
 
-def defineNetwork(certaintyOnInput,lr=0.01,weight_decay=0):
+def defineNetwork(certaintyOnInput,lr=0.01,weight_decay=0,random_seed = 1):
     # set basic hyperparameters
 
     batch_size_train = 100
@@ -87,7 +88,7 @@ def defineNetwork(certaintyOnInput,lr=0.01,weight_decay=0):
         branchPoints = {3: 'two_conv'}
 
     # initialize branchyNet
-    random_seed = 1
+
     # torch.backends.cudnn.enabled = False
     torch.manual_seed(random_seed)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -556,7 +557,20 @@ if __name__ == '__main__':
     #BranchTrainingMain(certaintyOnInput=True, lossFunctionID=2)
     # BranchTrainingMain(certaintyOnInput=True, lossFunctionID=1,netArct="LeNet")
     # BranchTrainingMain(certaintyOnInput=True, lossFunctionID=2,netArct="LeNet")
+    #
+    # weight_decay_grid = [0.01,0.025,0.05,0.075,0.1,0.25,0.5,0.75,1]
+    # for wd in weight_decay_grid:
+    #     BranchTrainingMain(certaintyOnInput=True, lossFunctionID=3, netArct="AlexNet",lossHyP = 33.82,weight_decay=wd)
 
-    weight_decay_grid = [0.01,0.025,0.05,0.075,0.1,0.25,0.5,0.75,1]
-    for wd in weight_decay_grid:
-        BranchTrainingMain(certaintyOnInput=True, lossFunctionID=3, netArct="AlexNet",lossHyP = 33.82,weight_decay=wd)
+    parser = argparse.ArgumentParser(description='Learning with LM-LSTM-CRF together with Language Model')
+    parser.add_argument('--lossFunctionID', type=int, default=2, help='choose loss function for training')
+    parser.add_argument('--netArct', default="AlexNet", help='which model to train')
+    parser.add_argument('--weight_decay', type=float, default=0, help='weight_decay')
+    parser.add_argument('--CompLoss', type=float, default=0, help='Computational loss parameter')
+    args = parser.parse_args()
+
+    BranchTrainingMain(certaintyOnInput=True,
+                       lossFunctionID = args.lossFunctionID,
+                       netArct=args.netArct,
+                       lossHyP=args.weight_decay,
+                       weight_decay=args.CompLoss)
